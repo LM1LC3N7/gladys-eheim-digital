@@ -1,67 +1,96 @@
-# Template de démonstration
+# EHEIM Digital pour Gladys
 
-Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
-fichier et affiche un lien **Documentation** permanent vers lui dans l'écran
-de configuration (dans la langue de l'utilisateur, avec l'anglais en repli) —
-c'est au moment de configurer que l'utilisateur en a le plus besoin. Gardez
-les courtes indications d'accueil dans les blocs `section` du `config_schema`
-du manifest ; mettez ici le pas-à-pas détaillé (captures d'écran, dépannage…).
+Affiche vos appareils d'aquarium **EHEIM Digital** dans Gladys par votre
+réseau local, sans cloud ni compte. **Jamais testé avec un vrai appareil.
+Sans lien avec EHEIM.**
 
-## Ce que vous obtenez
+## Appareils pris en charge
 
-Six appareils de démonstration apparaissent après l'installation : une
-station météo (vraies données Open-Meteo), un interrupteur, une lampe
-variable, une prise connectée avec mesure de puissance, un détecteur de
-mouvement et une caméra.
+| Appareil                    | Ce que Gladys affiche                                                                       | Commandes                       |
+| --------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------- |
+| thermocontrol+e (chauffage) | température de l'eau, consigne, chauffe, marche/arrêt, mode, alerte                         | consigne, marche/arrêt (option) |
+| classicVARIO+e (filtre)     | pompe marche/arrêt, vitesse (%), mode, état, heures avant l'entretien                       | pompe marche/arrêt (option)     |
+| professionel 5e (filtre)    | pompe marche/arrêt, fréquence (Hz), mode, heures avant l'entretien, temps de fonctionnement | pompe marche/arrêt (option)     |
+| pHcontrol+e                 | pH, consigne de pH, vanne CO2 ouverte, état, jours avant l'étalonnage                       | aucune                          |
+| classicLEDcontrol+e         | niveau de chaque canal (%)                                                                  | aucune                          |
+| reeflexUV+e                 | lampe allumée, actif, mode                                                                  | aucune                          |
+| autofeeder+                 | poids de nourriture (g), tambour, rotation                                                  | aucune                          |
 
-## Configuration
+Les autres appareils EHEIM Digital ne sont pas encore affichés.
 
-1. Ouvrez l'onglet **Configuration** de l'intégration.
-2. Renseignez la **latitude** et la **longitude** que la station météo de
-   démonstration doit observer (Paris par défaut), et choisissez votre unité
-   de température. L'**intervalle de rafraîchissement** règle la fréquence
-   de lecture de la station météo et de la puissance de la prise : toutes
-   les 5 minutes par défaut, toutes les minutes au plus.
-3. Enregistrez : les appareils apparaissent dans l'onglet **Découverte**,
-   prêts à être ajoutés.
+## Installation
 
-Le réglage **Préférer la connexion locale** pilote la prise de
-démonstration : elle affiche en badge le canal réellement utilisé (local ou
-cloud), avec un point orange quand elle fonctionne en mode dégradé (local
-refusé, bascule cloud).
+1. Trouvez l'adresse de votre hub : l'appareil EHEIM relié à votre Wi-Fi
+   (les autres le rejoignent par le maillage EHEIM). Son adresse IP est dans
+   votre box ; `eheimdigital.local` fonctionne souvent aussi. Donnez-lui une
+   adresse fixe.
+2. Dans Gladys, installez l'intégration, saisissez l'adresse, enregistrez.
+3. Ouvrez l'onglet **Découverte** et ajoutez les appareils.
 
-## Actions
+Le statut indique combien d'appareils répondent. **Tester la connexion** se
+connecte tout de suite et interroge à nouveau les appareils.
 
-- **Tester le fournisseur météo** — effectue une requête en direct vers
-  Open-Meteo et affiche la température et l'humidité actuelles sous le
-  bouton.
-- **Identifier un appareil** — choisissez un de vos appareils dans la liste
-  et il se signale (la lampe de démonstration « clignote » dans les logs).
+## Animaux vivants : les commandes
 
-## Scènes
+Un chauffage ou un filtre d'aquarium qui s'arrête peut tuer les poissons.
+Donc :
 
-L'intégration ajoute ses propres cartes à l'éditeur de scènes (Gladys 5.1
-ou plus récent), dans la catégorie **Intégrations** :
+- **Toutes les commandes sont désactivées par défaut.** « Autoriser les
+  commandes du chauffage » permet à Gladys de changer la consigne et de
+  mettre le chauffage en marche ou à l'arrêt ; « Autoriser les commandes du
+  filtre » lui permet de démarrer et d'arrêter la pompe du filtre. Sans son
+  option, une commande est refusée **dans les deux sens** : l'arrêt du
+  chauffage ou du filtre est refusé aussi.
+- **Jamais d'interrupteur** : le chauffage et la pompe du filtre sont des
+  listes (Marche/Arrêt). Un « tout éteindre » d'un assistant vocal, d'une
+  scène ou d'un tableau de bord ne les atteint jamais.
+- **La consigne reste entre le plancher et le plafond** de la
+  configuration : 22 °C et 28 °C par défaut ; le plancher de 18 à 30 °C, le
+  plafond de 20 à 32 °C. Rien hors de 18–32 °C n'est jamais envoyé, quoi
+  qu'on saisisse. Demi-degrés seulement. Un plancher égal ou supérieur au
+  plafond refuse toute consigne, et le statut le dit.
+- « Marche » est refusée quand la consigne réglée sur le chauffage lui-même
+  est hors des bornes. Un chauffage réglé en °F n'est jamais commandé (les
+  valeurs sont affichées en °C).
+- Chaque commande demande d'abord ses données actuelles à l'appareil et
+  décide sur cette réponse, revérifie les options et les bornes juste avant
+  l'envoi, et part dans les 3,5 s ou pas du tout. Si l'appareil ne montre
+  pas le changement à 4,3 s, Gladys répond « Commande envoyée, sans
+  confirmation » : vérifiez l'appareil. Une commande à la fois, jamais
+  rejouée.
 
-- **Mouvement détecté** (déclencheur) — lance la scène quand un détecteur
-  de démonstration voit bouger quelque chose. Choisissez éventuellement le
-  détecteur et ce qui a bougé (personne, animal) ; laissés vides, toute
-  détection correspond. Les actions suivantes peuvent lire ce qui a bougé
-  avec `{{triggerEvent.data.target}}`.
-- **Identifier un appareil** (action) — fait se signaler l'appareil choisi.
-  Elle indique si l'appareil a pu se signaler, pour que les actions
-  suivantes puissent en dépendre.
+Le contrôleur de pH, l'éclairage, le stérilisateur UV et le distributeur de
+nourriture sont en lecture seule.
 
-## Tableau de bord
+## Options
 
-Ajoutez le widget **État de la démo** à un tableau de bord : il affiche en
-direct la température de la station météo et la puissance de la prise du
-bureau, la connexion utilisée par la prise (en orange si dégradée) et la
-position observée. Son bouton **Identifier la lampe** fait se signaler la
-lampe de démonstration.
+| Option                               | Par défaut |                                                     |
+| ------------------------------------ | ---------- | --------------------------------------------------- |
+| Adresse du hub                       | —          | adresse IPv4 ou nom d'hôte, port 80 sauf précisé    |
+| Autoriser les commandes du chauffage | désactivé  | consigne et marche/arrêt                            |
+| Plancher de la consigne (°C)         | 22         | de 18 à 30                                          |
+| Plafond de la consigne (°C)          | 28         | de 20 à 32 (jamais plus de 32 °C)                   |
+| Autoriser les commandes du filtre    | désactivé  | pompe marche/arrêt                                  |
+| Intervalle de rafraîchissement (s)   | 30         | de 15 à 600                                         |
+| Langue                               | français   | noms des nouvelles fonctionnalités, textes, erreurs |
 
-## Dépannage
+## Sécurité et vie privée
 
-L'intégration journalise tout ce qu'elle fait : consultez les logs de
-l'intégration depuis l'interface Gladys (ou `docker logs` sur l'hôte) avec
-`LOG_LEVEL=debug` pour le détail complet.
+Le protocole local n'est pas documenté par EHEIM et n'a pas de mot de
+passe : toute personne sur votre réseau peut parler au hub. Gardez-le sur
+un réseau de confiance. L'intégration ne garde aucun secret et ne lit
+jamais l'adresse e-mail ni le nom d'utilisateur enregistrés dans le hub.
+Les journaux ne contiennent jamais les adresses MAC.
+
+## Limites
+
+- Jamais testé avec un vrai appareil : construit à partir de la
+  bibliothèque eheimdigital (celle de Home Assistant) et de ses captures.
+- Le hub doit être joignable depuis le conteneur de Gladys (même réseau).
+- Vitesses du filtre, programmes d'éclairage, consignes de pH et
+  distribution de nourriture ne sont pas commandés dans cette version.
+
+## Crédits
+
+Protocole porté depuis [eheimdigital](https://codeberg.org/autinerd/eheimdigital)
+(autinerd, MIT). Source : <https://github.com/LM1LC3N7/gladys-eheim-digital>.
