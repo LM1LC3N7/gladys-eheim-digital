@@ -28,7 +28,8 @@ Les autres appareils EHEIM Digital ne sont pas encore affichés.
 3. Ouvrez l'onglet **Découverte** et ajoutez les appareils.
 
 Le statut indique combien d'appareils répondent. **Tester la connexion** se
-connecte tout de suite et interroge à nouveau les appareils.
+connecte tout de suite si besoin, et interroge à nouveau les appareils
+quand aucun ne répond encore.
 
 ## Animaux vivants : les commandes
 
@@ -52,12 +53,21 @@ Donc :
 - « Marche » est refusée quand la consigne réglée sur le chauffage lui-même
   est hors des bornes. Un chauffage réglé en °F n'est jamais commandé (les
   valeurs sont affichées en °C).
+- La commande du chauffage renvoie ses autres réglages tels qu'il les
+  indique : elle est refusée si l'un d'eux sort des plages attendues
+  (consigne hors 18–32 °C, hystérésis au-delà de 2 °C, décalage
+  d'étalonnage au-delà de ±3 °C, baisse de nuit au-delà de 5 °C). En mode
+  Bio, chauffage en marche, la consigne de nuit (consigne moins la baisse de
+  nuit) doit rester au niveau du plancher ou au-dessus.
 - Chaque commande demande d'abord ses données actuelles à l'appareil et
-  décide sur cette réponse, revérifie les options et les bornes juste avant
-  l'envoi, et part dans les 3,5 s ou pas du tout. Si l'appareil ne montre
-  pas le changement à 4,3 s, Gladys répond « Commande envoyée, sans
-  confirmation » : vérifiez l'appareil. Une commande à la fois, jamais
-  rejouée.
+  décide sur les premières données reçues après le clic (le protocole ne dit
+  pas à quelle demande répond un paquet), revérifie les options et les
+  bornes juste avant l'envoi, et part dans les 3,5 s ou pas du tout. Si
+  l'appareil ne montre pas le changement à 4,3 s, Gladys répond « Commande
+  envoyée, sans confirmation » : vérifiez l'appareil. Tant que l'appareil ne
+  l'affiche pas (30 s au plus), toute autre commande vers cet appareil est
+  refusée, pour qu'une commande suivante ne la défasse jamais. Une commande
+  à la fois, jamais rejouée.
 
 Le contrôleur de pH, l'éclairage, le stérilisateur UV et le distributeur de
 nourriture sont en lecture seule.

@@ -46,4 +46,24 @@ the notes of the version's GitHub Release.
 - "Test the connection" button; documentation in English and French;
   `LICENSE` and `THIRD_PARTY_NOTICES.md` shipped in the image.
 
+### Changed (review 1)
+
+- A command sent without confirmation guards its device: any other command
+  to it is refused until data shows the effect (30 s at most), so a
+  setpoint can no longer turn a heater back on right after an "Off".
+- A heater packet is never sent when the heater reports a setpoint outside
+  18–32 °C or implausible settings (hysteresis, calibration offset, night
+  reduction); in Bio mode the night setpoint stays at or above the floor.
+- A hub flipping the type of a device cannot flood the Discovery list (at
+  once only for the first data of each device, then 5 s apart).
+- A `MESH_NETWORK` list asks each unknown device at most once per refresh
+  interval.
+- The reconnection backoff starts again from 10 s once the hub has talked.
+- Publications to Gladys (Discovery, badges, status) go one at a time, in
+  order: an older list answered late never stays.
+- A scan never asks the hub faster than the refresh interval.
+- The reason of a connection failure is translated in the status.
+- Docs: commands decide on the first data received after the click; the
+  test button asks the devices again only when none answers.
+
 [Unreleased]: https://github.com/LM1LC3N7/gladys-eheim-digital/commits/main

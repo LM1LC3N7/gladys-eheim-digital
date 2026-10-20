@@ -103,6 +103,19 @@ export const HEATER_LIMITS = {
   ceiling: { min: 20, max: 32, default: 28 },
 };
 
+/**
+ * The settings a SET_EHEATER_PARAM sends back, in tenths of °C: refused when
+ * the heater reports one outside these ranges (a hostile hub, or a value set
+ * in the EHEIM app that Gladys must not confirm by resending it).
+ */
+export const HEATER_PLAUSIBLE = {
+  sollTemp: [HEATER_LIMITS.min * 10, HEATER_LIMITS.max * 10],
+  hystLow: [0, 20],
+  hystHigh: [0, 20],
+  offset: [-30, 30],
+  nReduce: [0, 50],
+};
+
 /** The setpoint feature of Gladys: its slider (°C), frozen at creation. */
 export const SETPOINT_FEATURE = { min: HEATER_LIMITS.min, max: HEATER_LIMITS.max };
 
@@ -123,6 +136,8 @@ export const LIMITS = {
   messagesPerSecond: 50,
   /** Devices of one mesh (others are ignored). */
   devices: 16,
+  /** MAC addresses of MESH_NETWORK lists remembered (asked once per interval). */
+  meshAsked: 64,
   /** Keys of one packet: a bigger object is not an EHEIM packet. */
   keysPerPacket: 80,
   /** A packet we send: 4 KiB at most. */
@@ -166,4 +181,10 @@ export const TIMINGS = {
   commandAnswerBy: 4_300,
   /** After a command packet, the data asked again at these delays. */
   confirmAsk: [400, 1_500],
+  /**
+   * A command sent without confirmation keeps a guard on its device until
+   * data shows its effect, or this long: no other command is decided on data
+   * that may not show it yet.
+   */
+  guard: 30 * SECOND,
 };

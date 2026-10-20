@@ -78,8 +78,10 @@ scripts/cover.mjs          cover.png generator
   aquarium heater or filter turned off harms the animals); decided on data
   asked after the click; options and bounds checked again right before the
   packet; never sent after 3.5 s; no effect by 4.3 s → "sent, without
-  confirmation"; never retried; one command at a time; the ack never waits
-  for Gladys.
+  confirmation"; then a guard refuses any other command to that device
+  until data shows the effect (30 s at most); every heater packet checked
+  against `HEATER_PLAUSIBLE` before it leaves; never retried; one command
+  at a time; the ack never waits for Gladys.
 - **Setpoint**: between the configured floor and ceiling (22/28 °C by
   default), never outside 18–32 °C, half degrees only; "On" refused when
   the heater's own setpoint is outside; never command a heater set to °F.

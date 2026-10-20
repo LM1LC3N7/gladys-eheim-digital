@@ -113,6 +113,38 @@ up to date at the end of every milestone.
   ("still running" for a second one); never retried; the ack never waits
   for a publication. The SET packets are built from the parsed fresh data
   (the fields of the library's packets), never from a received object.
+- **Review round 1 (2026-10-21)**, scenarios S1–S16 of the reviewer:
+  - I1: a guard per device after every command packet (field and value
+    expected, the data sequence): any other command to the device is
+    refused ("not confirmed yet") until data received after the packet
+    shows the value, or 30 s. Tests R1, R1b.
+  - I2: every SET_EHEATER_PARAM is checked itself in `beforeSend` (and at
+    the decision), whatever the command: °C, `sollTemp` 180–320, `hystLow`
+    and `hystHigh` 0–20, `offset` ±30, `nReduce` 0–50 (tenths of °C,
+    `HEATER_PLAUSIBLE`); otherwise "settings outside the expected ranges".
+    Test R2.
+  - I3: the Discovery list is published at once only for the first data of
+    each MAC in a run (16 at most); everything else through the 5 s limit.
+    Test R3.
+  - I4: a MESH_NETWORK MAC is asked at most once per poll interval, 64
+    remembered. Test R4.
+  - I5: `hub.failures` is reset when the hub talks (a valid USRDTA or data),
+    not on the mere opening (a hub that opens then closes still backs off).
+    Test R5.
+  - M6: Discovery, badges and status publications serialized (each built
+    when its turn comes). Test R6.
+  - M7: the decision takes the first data received after the click (no
+    request id in the protocol: a packet pushed just after the click
+    counts); docs reworded.
+  - M8: in Bio mode with the heater on, the night setpoint (`sollTemp −
+nReduce`) must stay at or above the floor; the offset is bounded (I2).
+    Test R2b.
+  - M9: a scan polls only when the poll is due anyway (max of 10 s and the
+    interval). Test R9.
+  - M10: the failure reasons translated (`REASONS`). Test R10.
+  - M11: docs of the test button aligned with the code.
+  - Kept, as decided: turning the heater or the filter off stays behind its
+    option.
 - **Read only in v1**: pHcontrol+e (CO2 dosing), classicLEDcontrol+e,
   reeflexUV+e, autofeeder+ (feeding), filter speeds and modes, heater mode.
 - **Connection**: polls every `poll_interval` (30 s, 15–600): `GET_USRDTA`

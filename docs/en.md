@@ -27,7 +27,7 @@ Other EHEIM Digital devices are not shown yet.
 3. Open the **Discovery** tab and add the devices.
 
 The status says how many devices answer. **Test the connection** connects
-now and asks the devices again.
+now if needed, and asks the devices again when none answers yet.
 
 ## Living animals: the commands
 
@@ -48,11 +48,20 @@ An aquarium heater or filter that stops can kill the fish. So:
   setpoint, and the status says so.
 - "On" is refused when the setpoint set on the heater itself is outside the
   bounds. A heater set to °F is never commanded (values are shown in °C).
+- The heater command resends the other settings of the heater as it
+  reports them: it is refused when one is outside the expected ranges
+  (setpoint outside 18–32 °C, hysteresis above 2 °C, calibration offset
+  beyond ±3 °C, night reduction above 5 °C). In Bio mode, with the heater
+  on, the night setpoint (setpoint minus the night reduction) must stay at
+  or above the floor.
 - Each command first asks the device for its current data and decides on
-  that answer, checks the options and the bounds again right before
-  sending, and is sent within 3.5 s or not at all. When the device does not
-  show the change by 4.3 s, Gladys answers "Command sent, without
-  confirmation": check the device. One command at a time, never retried.
+  the first data received after the click (the protocol does not tell which
+  request an answer belongs to), checks the options and the bounds again
+  right before sending, and is sent within 3.5 s or not at all. When the
+  device does not show the change by 4.3 s, Gladys answers "Command sent,
+  without confirmation": check the device. Until the device shows it (30 s
+  at most), any other command to that device is refused, so a later command
+  never undoes it. One command at a time, never retried.
 
 The pH controller, the light, the UV sterilizer and the feeder are read
 only.

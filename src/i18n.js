@@ -96,6 +96,17 @@ export const STATE_TEXTS = {
   },
 };
 
+/** The reasons of a connection failure (the kinds of src/eheim/connection.js). */
+export const REASONS = {
+  unreachable: both('unreachable', 'injoignable'),
+  protocol: both('not an EHEIM Digital hub', 'pas un hub EHEIM Digital'),
+  closed: both('connection closed', 'connexion fermée'),
+  silent: both('the hub stopped talking', 'le hub ne répond plus'),
+  error: both('error', 'erreur'),
+};
+
+export const reasonOf = (kind) => REASONS[kind] ?? REASONS.error;
+
 /** The integration status, the button and the logs a user may read. */
 export const T = {
   noAddress: both(
@@ -122,11 +133,13 @@ export const T = {
       `Connected: ${count} EHEIM Digital device${count > 1 ? 's' : ''}.`,
       `Connecté : ${count} appareil${count > 1 ? 's' : ''} EHEIM Digital.`,
     ),
-  unreachable: (address, reason, wait) =>
-    both(
-      `No connection to the EHEIM Digital hub at ${address} (${reason}; next try in ${wait.en}). Check the address and that the hub is on the same network.`,
-      `Pas de connexion au hub EHEIM Digital ${address} (${reason} ; nouvel essai dans ${wait.fr}). Vérifiez l'adresse et que le hub est sur le même réseau.`,
-    ),
+  unreachable: (address, reason, wait) => {
+    const r = reasonOf(reason);
+    return both(
+      `No connection to the EHEIM Digital hub at ${address} (${r.en}; next try in ${wait.en}). Check the address and that the hub is on the same network.`,
+      `Pas de connexion au hub EHEIM Digital ${address} (${r.fr} ; nouvel essai dans ${wait.fr}). Vérifiez l'adresse et que le hub est sur le même réseau.`,
+    );
+  },
   test: {
     cooldown: both('Tested less than 10 s ago.', 'Testé il y a moins de 10 s.'),
   },
@@ -196,8 +209,21 @@ export const ERRORS = {
   ),
   notSent: (reason) =>
     both(
-      `The hub could not be reached (${reason}): not sent.`,
-      `Le hub n'a pas pu être joint (${reason}) : non envoyée.`,
+      `The hub could not be reached (${reasonOf(reason).en}): not sent.`,
+      `Le hub n'a pas pu être joint (${reasonOf(reason).fr}) : non envoyée.`,
+    ),
+  unconfirmed: both(
+    'The previous command to this device is not confirmed yet: not sent. Try again once the device shows it (30 s at most).',
+    "Une commande précédente vers cet appareil n'est pas encore confirmée : non envoyée. Réessayez quand l'appareil l'affiche (30 s au plus).",
+  ),
+  heaterOdd: both(
+    'The heater reports settings outside the expected ranges (setpoint outside 18–32 °C, hysteresis, calibration offset or night reduction): not sent.',
+    'Le chauffage indique des réglages hors des plages attendues (consigne hors 18–32 °C, hystérésis, décalage d’étalonnage ou baisse de nuit) : non envoyée.',
+  ),
+  nightBelowFloor: (night, floor) =>
+    both(
+      `In Bio mode the night setpoint would be ${night} °C, below the floor (${floor} °C): not sent.`,
+      `En mode Bio la consigne de nuit serait de ${fr(night)} °C, sous le plancher (${fr(floor)} °C) : non envoyée.`,
     ),
   sentUnconfirmed: both(
     'Command sent, without confirmation: check the device in a few seconds.',

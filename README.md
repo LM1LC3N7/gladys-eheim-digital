@@ -45,8 +45,11 @@ Gladys ⇄ SDK ⇄ src/handlers.js ⇄ src/app.js (EheimApp)
   after the click (2 s at most); options and bounds checked again right
   before the packet (`beforeSend`); the packet leaves by 3.5 s or not at
   all; the effect awaited until 4.3 s (the data asked again at 0.4 and
-  1.5 s), else "sent, without confirmation". One command at a time, never
-  retried. "On" refused when the heater's own setpoint is outside the
+  1.5 s), else "sent, without confirmation", and a guard refuses any other
+  command to that device until data shows the effect (30 s at most). Every
+  heater packet is checked itself (setpoint 18–32 °C, plausible hysteresis,
+  offset, night reduction; Bio night setpoint above the floor). One command
+  at a time, never retried. "On" refused when the heater's own setpoint is outside the
   bounds; a heater set to °F is never commanded.
 
 ## Credits

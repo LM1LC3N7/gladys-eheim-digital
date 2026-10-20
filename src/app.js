@@ -27,7 +27,14 @@
 
 import { DEVICE_TRANSPORTS, createLogger } from '@gladysassistant/integration-sdk';
 import { addressKey, normalizeConfig, numberOf } from './config.js';
-import { DEVICE_TYPES as D, FEATURES as F, HEATER_LIMITS, LIMITS, TIMINGS } from './constants.js';
+import {
+  DEVICE_TYPES as D,
+  FEATURES as F,
+  HEATER_LIMITS,
+  HEATER_PLAUSIBLE,
+  LIMITS,
+  TIMINGS,
+} from './constants.js';
 import {
   buildDevice,
   deviceIds,
@@ -95,6 +102,8 @@ export class EheimApp {
     this.busy = false;
     /** The device types already logged as not supported. */
     this.loggedTypes = new Set();
+    /** kind -> the last publication of that kind (see serial()). */
+    this.queues = {};
   }
 
   // --- Lifecycle -------------------------------------------------------------
@@ -116,6 +125,12 @@ export class EheimApp {
       devices: new Map(),
       waiters: new Set(),
       liveKey: undefined,
+      /** The MACs whose first data was published at once (once per MAC and run). */
+      immediate: new Set(),
+      /** mac -> when its USRDTA was last asked for a MESH_NETWORK list. */
+      meshAsked: new Map(),
+      /** mac -> { seq, done(data), until }: a command sent, not confirmed yet. */
+      guards: new Map(),
     };
   }
 
@@ -221,7 +236,11 @@ export class EheimApp {
     await this.updateStatus();
   }
 
-  async setStatus(connected, message) {
+  setStatus(connected, message) {
+    return this.serial('status', () => this.setStatusNow(connected, message));
+  }
+
+  async setStatusNow(connected, message) {
     const key = JSON.stringify([connected, message ?? null]);
     if (key === this.lastStatus) {
       return;
@@ -362,14 +381,37 @@ export class EheimApp {
         this.onUsrdta(hub, packet);
         return;
       case 'MESH_NETWORK':
-        for (const wire of parseMesh(packet)) {
-          if (!hub.devices.has(macOf(wire)) && hub.devices.size < LIMITS.devices) {
-            this.sendQuietly(hub, { title: 'GET_USRDTA', to: wire, from: 'USER' });
-          }
-        }
+        this.onMesh(hub, packet);
         return;
       default:
         this.onData(hub, packet);
+    }
+  }
+
+  /**
+   * The devices of a MESH_NETWORK list not known yet: each asked at most
+   * once per poll interval (a hub repeating the list never makes us flood
+   * it), LIMITS.meshAsked MACs remembered.
+   */
+  onMesh(hub, packet) {
+    const now = this.now();
+    for (const [mac, at] of hub.meshAsked) {
+      if (now - at >= this.pollMs) {
+        hub.meshAsked.delete(mac);
+      }
+    }
+    for (const wire of parseMesh(packet)) {
+      const mac = macOf(wire);
+      if (
+        hub.devices.has(mac) ||
+        hub.devices.size >= LIMITS.devices ||
+        hub.meshAsked.has(mac) ||
+        hub.meshAsked.size >= LIMITS.meshAsked
+      ) {
+        continue;
+      }
+      hub.meshAsked.set(mac, now);
+      this.sendQuietly(hub, { title: 'GET_USRDTA', to: wire, from: 'USER' });
     }
   }
 
@@ -378,6 +420,8 @@ export class EheimApp {
     if (!identity) {
       return;
     }
+    // The hub talks on this connection: the backoff starts again from 10 s.
+    hub.failures = 0;
     const known = hub.devices.get(identity.mac);
     if (known && known.type === identity.type) {
       const before = JSON.stringify([known.name, known.aquarium, known.revision, known.wire]);
@@ -425,6 +469,7 @@ export class EheimApp {
     if (!data) {
       return;
     }
+    hub.failures = 0;
     const key = JSON.stringify(data);
     const first = entry.data === undefined;
     const same = key === entry.dataKey;
@@ -434,11 +479,22 @@ export class EheimApp {
     this.seq += 1;
     entry.seq = this.seq;
     entry.dataAt = this.now();
+    const guard = hub.guards.get(entry.mac);
+    if (guard && entry.seq > guard.seq && guard.entry === entry && guard.done(data)) {
+      // Data shows the effect of the unconfirmed command: other commands may go.
+      hub.guards.delete(entry.mac);
+    }
     for (const waiter of [...hub.waiters]) {
       waiter.check();
     }
     if (first || rolesOf(entry.type, data).join() !== rolesBefore) {
-      this.changed(first);
+      // At once only the first time a MAC gives data in this run (16 at most):
+      // a hub flipping the type of a MAC goes through the 5 s limit.
+      const now = first && !hub.immediate.has(entry.mac) && hub.immediate.size < LIMITS.devices;
+      if (now) {
+        hub.immediate.add(entry.mac);
+      }
+      this.changed(now);
     }
     if (!same) {
       this.queueStates(undefined, entry.mac);
@@ -558,8 +614,23 @@ export class EheimApp {
     return [...roles, ...[...entry.seen].filter((role) => !roles.includes(role))];
   }
 
+  /**
+   * One publication of a kind at a time, in order: each builds its content
+   * when its turn comes, so the last one to land is the latest (an older
+   * list answered late never stays in Gladys).
+   */
+  serial(kind, run) {
+    const next = (this.queues[kind] ?? Promise.resolve()).catch(() => {}).then(run);
+    this.queues[kind] = next;
+    return next;
+  }
+
   /** The Discovery list: every supported device of the mesh that gave its data. */
-  async publishDevices() {
+  publishDevices() {
+    return this.serial('devices', () => this.publishDevicesNow());
+  }
+
+  async publishDevicesNow() {
     const hub = this.hub;
     if (!hub) {
       return;
@@ -628,7 +699,11 @@ export class EheimApp {
     }
   }
 
-  async publishBadge() {
+  publishBadge() {
+    return this.serial('badge', () => this.publishBadgeNow());
+  }
+
+  async publishBadgeNow() {
     const entries = this.ourDevices().map(({ device, mac }) => ({
       external_id: device.external_id,
       transport: this.isLive(this.hub?.devices.get(mac))
@@ -698,10 +773,13 @@ export class EheimApp {
     }
   }
 
-  /** The Discovery tab asks for a scan: the devices sent again, the hub asked if not lately. */
+  /**
+   * The Discovery tab asks for a scan: the devices sent again; the hub asked
+   * only when the poll is due anyway (never faster than the interval).
+   */
   async scan() {
     const hub = this.hub;
-    if (hub?.linked && this.now() - hub.lastPollAt >= TIMINGS.testCooldown) {
+    if (hub?.linked && this.now() - hub.lastPollAt >= Math.max(TIMINGS.testCooldown, this.pollMs)) {
       this.poll(hub);
     }
     this.published = undefined;
@@ -901,6 +979,7 @@ export class EheimApp {
       throw this.refusal(ERRORS.notConnected);
     }
     this.checkBeforeSend(context, target, wanted);
+    this.checkGuard(hub, target.mac);
     // Data asked and received after the click: never the one kept in memory.
     const after = entry.seq;
     try {
@@ -929,6 +1008,14 @@ export class EheimApp {
     this.send(context, target, wanted, plan.packet, plan.check);
     const sentSeq = context.seq;
     this.logger.info(`EHEIM ${target.role}: command sent`);
+    // Until data shows its effect (or 30 s), no other command on this device
+    // is decided on data that may not show it yet (lifted in onData).
+    hub.guards.set(target.mac, {
+      seq: sentSeq,
+      entry,
+      done: plan.done,
+      until: this.now() + TIMINGS.guard,
+    });
     // The hub may not push the new data: asked again shortly after.
     const generation = this.generation;
     for (const delay of TIMINGS.confirmAsk) {
@@ -955,8 +1042,9 @@ export class EheimApp {
       if (data.mUnit !== 0) {
         throw this.refusal(ERRORS.fahrenheit);
       }
-      // Right before the packet: still °C, the bounds of the latest configuration.
-      const check = () => {
+      // Right before the packet: still °C, the bounds of the latest
+      // configuration, and the packet itself plausible whatever the command.
+      const checkWith = (packet) => () => {
         const latest = this.hub.devices.get(target.mac)?.data;
         if (!latest || latest.mUnit !== 0) {
           throw this.refusal(ERRORS.fahrenheit);
@@ -966,17 +1054,16 @@ export class EheimApp {
         } else if (wanted.on === 1) {
           this.checkSetpointInside(latest.sollTemp / 10);
         }
+        this.checkHeaterPacket(packet);
       };
       if (wanted.kind === 'setpoint') {
         const tenths = Math.round(wanted.value * 10);
         if (data.sollTemp === tenths) {
           return undefined;
         }
-        return {
-          packet: heaterParam(wire, data, { sollTemp: tenths }),
-          done: (d) => d.sollTemp === tenths,
-          check,
-        };
+        const packet = heaterParam(wire, data, { sollTemp: tenths });
+        this.checkHeaterPacket(packet);
+        return { packet, done: (d) => d.sollTemp === tenths, check: checkWith(packet) };
       }
       if (wanted.on === 1) {
         // "On" heats to the setpoint set on the heater: never outside the bounds.
@@ -985,11 +1072,9 @@ export class EheimApp {
       if (data.active === wanted.on) {
         return undefined;
       }
-      return {
-        packet: heaterParam(wire, data, { active: wanted.on }),
-        done: (d) => d.active === wanted.on,
-        check,
-      };
+      const packet = heaterParam(wire, data, { active: wanted.on });
+      this.checkHeaterPacket(packet);
+      return { packet, done: (d) => d.active === wanted.on, check: checkWith(packet) };
     }
     if (data.filterActive === wanted.on) {
       return undefined;
@@ -1002,6 +1087,43 @@ export class EheimApp {
       done: (d) => d.filterActive === wanted.on,
       check: () => {},
     };
+  }
+
+  /**
+   * A SET_EHEATER_PARAM never carries settings outside the plausible ranges
+   * (HEATER_PLAUSIBLE): °C only, setpoint 18–32 °C, hysteresis, calibration
+   * offset and night reduction bounded; in Bio mode with the heater on, the
+   * night setpoint (setpoint − night reduction) stays at or above the floor.
+   */
+  checkHeaterPacket(packet) {
+    if (packet.mUnit !== 0) {
+      throw this.refusal(ERRORS.fahrenheit);
+    }
+    for (const [key, [min, max]] of Object.entries(HEATER_PLAUSIBLE)) {
+      const value = packet[key];
+      if (!Number.isInteger(value) || value < min || value > max) {
+        throw this.refusal(ERRORS.heaterOdd);
+      }
+    }
+    if (packet.active === 1 && packet.mode === 2) {
+      const night = (packet.sollTemp - packet.nReduce) / 10;
+      if (night < this.config.floor) {
+        throw this.refusal(ERRORS.nightBelowFloor(night, this.config.floor));
+      }
+    }
+  }
+
+  /** A command sent without confirmation on this device: nothing else is decided yet. */
+  checkGuard(hub, mac) {
+    const guard = hub.guards.get(mac);
+    if (!guard) {
+      return;
+    }
+    if (this.now() >= guard.until) {
+      hub.guards.delete(mac);
+      return;
+    }
+    throw this.refusal(ERRORS.unconfirmed);
   }
 
   checkSetpointInside(value) {

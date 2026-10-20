@@ -9,9 +9,17 @@ import assert from 'node:assert/strict';
 import { DEVICE_TRANSPORTS } from '@gladysassistant/integration-sdk';
 import { createFakeGladys } from '@gladysassistant/integration-sdk/testing';
 import { EheimApp } from '../src/app.js';
-import { ACTIONS, SECOND } from '../src/constants.js';
+import { ACTIONS, MINUTE, SECOND } from '../src/constants.js';
 import { registerHandlers } from '../src/handlers.js';
-import { HEATER_ID, HOST, NOW, VARIO_ID, fakeHub, settle } from './helpers/fakeHub.js';
+import {
+  HEATER as HEATER_MAC,
+  HEATER_ID,
+  HOST,
+  NOW,
+  VARIO_ID,
+  fakeHub,
+  settle,
+} from './helpers/fakeHub.js';
 
 const CONFIG = { address: HOST };
 const HEATER_ON = { address: HOST, allow_heater: true };
@@ -19,9 +27,10 @@ const FILTER_ON = { address: HOST, allow_filter: true };
 const HEATER = `ext:test-integration:eheim:${HEATER_ID}`;
 const VARIO = `ext:test-integration:eheim:${VARIO_ID}`;
 
-async function setup(t, { config = CONFIG, hub = fakeHub(), create = true, logs = [] } = {}) {
+async function setup(t, { config = CONFIG, hub = fakeHub(), create = true, logs = [], wrap } = {}) {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: NOW });
   const gladys = createFakeGladys({ config });
+  wrap?.(gladys);
   const app = new EheimApp({
     gladys,
     logger: recorder(logs),
@@ -435,4 +444,167 @@ test('the test button connects and answers with the device count', async (t) => 
   const { gladys } = await setup(t);
   const ack = await gladys.fake.action(ACTIONS.TEST_CONNECTION);
   assert.match(ack.data.message.fr, /2 appareils/);
+});
+
+// --- Review 1 -----------------------------------------------------------------
+
+const dropAll = (hub) => {
+  for (const socket of [...hub.sockets]) socket.terminate();
+};
+
+test('R1 a command sent without confirmation guards its device until data shows it', async (t) => {
+  const { hub, command, advance } = await setup(t, { config: HEATER_ON });
+  hub.ignore = true; // the hub is slow: the "off" is not applied yet
+  const off = await command(HEATER, 'heater-power', 'off', { wait: 4400 });
+  assert.match(off.error, /sans confirmation/);
+  hub.ignore = false;
+  // A setpoint right after would resend active=1 from data that does not show the "off".
+  const next = await command(HEATER, 'target-temperature', 26);
+  assert.match(next.error, /pas encore confirmée/);
+  assert.deepEqual(
+    hub.commands().map((p) => p.active),
+    [0],
+  );
+  // The heater shows the "off" at the next poll: the guard goes.
+  hub.heater.active = 0;
+  await advance(31 * SECOND, 1000);
+  const after = await command(HEATER, 'target-temperature', 26);
+  assert.equal(after.success, true, after.error);
+  assert.equal(hub.commands().at(-1).active, 0, 'the "off" is kept');
+});
+
+test('R1b the guard expires after 30 s when the effect never shows', async (t) => {
+  const { hub, command, advance } = await setup(t, { config: HEATER_ON });
+  hub.ignore = true;
+  await command(HEATER, 'target-temperature', 27, { wait: 4400 });
+  assert.match((await command(HEATER, 'target-temperature', 26)).error, /pas encore confirmée/);
+  await advance(30 * SECOND, 1000);
+  hub.ignore = false;
+  assert.equal((await command(HEATER, 'target-temperature', 26)).success, true);
+});
+
+test('R2 a packet carrying a setpoint outside 18–32 °C or odd settings is never sent', async (t) => {
+  const { hub, command } = await setup(t, { config: HEATER_ON });
+  hub.heater.sollTemp = 350; // 35 °C set in the EHEIM app (or a hostile hub)
+  assert.match((await command(HEATER, 'heater-power', 'off')).error, /hors des plages attendues/);
+  hub.heater.sollTemp = 250;
+  for (const [key, value] of [
+    ['offset', -100],
+    ['nReduce', 100],
+    ['hystLow', 50],
+  ]) {
+    const saved = hub.heater[key];
+    hub.heater[key] = value;
+    const ack = await command(HEATER, 'heater-power', 'off');
+    assert.match(ack.error, /hors des plages attendues/, key);
+    hub.heater[key] = saved;
+  }
+  assert.equal(hub.commands().length, 0);
+});
+
+test('R2b Bio mode: the night setpoint stays at or above the floor', async (t) => {
+  const { hub, command } = await setup(t, { config: HEATER_ON });
+  hub.heater.mode = 2;
+  hub.heater.nReduce = 40; // 4 °C at night
+  // 25 − 4 = 21 °C < 22 °C.
+  assert.match((await command(HEATER, 'target-temperature', 25.5)).error, /nuit serait de 21,5/);
+  assert.equal((await command(HEATER, 'target-temperature', 26)).success, true);
+  assert.equal(hub.commands().length, 1);
+});
+
+test('R3 a hub flipping the type of a MAC never floods the Discovery list', async (t) => {
+  const hub = fakeHub();
+  const { gladys, advance } = await setup(t, { hub });
+  const count = () =>
+    gladys.fake.requests.filter((r) => r.method === 'POST' && r.path === '/discovered_device')
+      .length;
+  const before = count();
+  const usr = (version) => ({ ...hub.devices[0], version });
+  const burst = [];
+  for (let i = 0; i < 8; i += 1) {
+    burst.push(usr(5), hub.heater, usr(18), { ...hub.vario, from: HEATER_MAC });
+  }
+  for (let m = 0; m < 50; m += 1) hub.push(burst);
+  await advance(11 * SECOND, 50);
+  assert.ok(count() - before <= 3, `published ${count() - before}`);
+});
+
+test('R4 MESH_NETWORK lists never amplify into a flood of requests', async (t) => {
+  const hub = fakeHub();
+  const { advance } = await setup(t, { hub });
+  const asked = () => hub.received.filter((p) => p.title === 'GET_USRDTA' && p.to !== 'ALL').length;
+  const before = asked();
+  const macs = Array.from({ length: 16 }, (_, i) => `AA:BB:CC:DD:EE:${String(i).padStart(2, '0')}`);
+  hub.mute = true;
+  const mesh = Array.from({ length: 32 }, () => ({
+    title: 'MESH_NETWORK',
+    from: HEATER_MAC,
+    clientList: macs,
+  }));
+  for (let m = 0; m < 50; m += 1) hub.push(mesh);
+  await advance(SECOND, 50);
+  // Each unknown MAC asked once.
+  assert.equal(asked() - before, 16);
+  for (let m = 0; m < 50; m += 1) hub.push(mesh);
+  await advance(SECOND, 50);
+  assert.equal(asked() - before, 16, 'not asked again within the interval');
+});
+
+test('R5 the backoff starts again from 10 s once the hub talked', async (t) => {
+  const hub = fakeHub();
+  const { advance } = await setup(t, { hub });
+  for (const w of [10, 30, 60, 120, 300]) {
+    hub.down = true;
+    dropAll(hub);
+    await advance(SECOND, 500);
+    hub.down = false;
+    await advance((w + 2) * SECOND, 1000);
+  }
+  const before = hub.connects.length;
+  await advance(10 * MINUTE, 5000);
+  dropAll(hub);
+  await advance(12 * SECOND, 1000);
+  assert.equal(hub.connects.length - before, 1, 'reconnected after 10 s');
+});
+
+test('R6 an older Discovery list answered late never stays in Gladys', async (t) => {
+  let n = 0;
+  const wrap = (gladys) => {
+    const orig = gladys.publishDiscoveredDevices.bind(gladys);
+    gladys.publishDiscoveredDevices = (devices) => {
+      n += 1;
+      const delay = n === 1 ? 300 : 0;
+      return new Promise((resolve, reject) =>
+        setTimeout(() => orig(devices).then(resolve, reject), delay),
+      );
+    };
+  };
+  const { gladys, advance } = await setup(t, { create: false, wrap });
+  await advance(2 * SECOND);
+  assert.equal(gladys.fake.discoveredDevices.length, 2);
+});
+
+test('R9 a scan never asks the hub faster than the interval', async (t) => {
+  const hub = fakeHub();
+  const { gladys, advance } = await setup(t, {
+    hub,
+    config: { address: HOST, poll_interval: 600 },
+  });
+  const before = hub.received.filter((p) => p.title === 'GET_USRDTA').length;
+  for (let i = 0; i < 6; i += 1) {
+    await gladys.fake.scanRequest();
+    await advance(10 * SECOND, 1000);
+  }
+  assert.equal(hub.received.filter((p) => p.title === 'GET_USRDTA').length - before, 0);
+  assert.equal(gladys.fake.discoveredDevices.length, 2);
+});
+
+test('R10 the reason of a failure is translated', async (t) => {
+  const hub = fakeHub();
+  const { gladys, advance } = await setup(t, { hub });
+  hub.down = true;
+  dropAll(hub);
+  await advance(SECOND);
+  assert.match(message(gladys).fr, /connexion fermée/);
+  assert.match(message(gladys).en, /connection closed/);
 });
