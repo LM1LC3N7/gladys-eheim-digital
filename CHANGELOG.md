@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-21
+
 ### Added
 
 - EHEIM Digital aquarium devices over the local network (the websocket of
@@ -66,4 +68,5 @@ the notes of the version's GitHub Release.
 - Docs: commands decide on the first data received after the click; the
   test button asks the devices again only when none answers.
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-eheim-digital/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-eheim-digital/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-eheim-digital/releases/tag/v0.1.1
