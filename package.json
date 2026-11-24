@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "node --test",
+    "test": "node --test --test-timeout=60000",
     "audit": "npm audit --omit=dev",
     "validate:manifest": "npx --yes github:GladysAssistant/integration-store .",
     "cover": "node scripts/cover.mjs cover.png"
@@ -19,7 +19,7 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@gladysassistant/integration-sdk": "^0.15.0",
+    "@gladysassistant/integration-sdk": "^0.16.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {

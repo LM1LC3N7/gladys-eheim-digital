@@ -7,7 +7,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DEFAULT_CONFIG } from '../src/config.js';
-import { ACTIONS, HEATER_LIMITS, POLL } from '../src/constants.js';
+import { createFakeGladys } from '@gladysassistant/integration-sdk/testing';
+import { ACTIONS, DEVICE_TYPES, HEATER_LIMITS, LIMITS, POLL } from '../src/constants.js';
+import { TYPE_ROLES, buildDevice, rolesOf } from '../src/devices.js';
+import { assertCoreDevice } from './helpers/coreFeature.js';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const manifest = JSON.parse(read('gladys-assistant-integration.json'));
@@ -128,4 +131,27 @@ test('the actions are the ones the code handles', () => {
   assert.equal(manifest.scene_actions, undefined);
   assert.equal(manifest.scene_triggers, undefined);
   assert.equal(manifest.widgets, undefined);
+});
+
+test('every feature of every device type has a numeric min and max and the other core fields', () => {
+  const gladys = createFakeGladys({ selector: 'eheim' });
+  const ledData = { currentValues: Array.from({ length: LIMITS.lightChannels + 1 }, () => 50) };
+  let features = 0;
+  let expected = 0;
+  for (const language of ['fr', 'en']) {
+    for (const type of Object.values(DEVICE_TYPES)) {
+      const mac = `00112233445${type % 10}`;
+      const roles = rolesOf(type, type === DEVICE_TYPES.LED_CONTROL ? ledData : undefined);
+      const device = buildDevice(
+        gladys,
+        { mac, type, name: '', revision: [1, 0, 0] },
+        { roles, language },
+      );
+      features += assertCoreDevice(device, `${language} type ${type}`);
+      expected +=
+        TYPE_ROLES[type].length + (type === DEVICE_TYPES.LED_CONTROL ? LIMITS.lightChannels : 0);
+    }
+  }
+  assert.ok(expected > 0);
+  assert.equal(features, expected);
 });

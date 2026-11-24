@@ -8,7 +8,7 @@ already taken and the next milestones.
 
 A Gladys Assistant **external integration** of type `device`: a Node.js
 service (Node 22+, ESM, no build step) in its own sandboxed Docker container,
-talking to Gladys through `@gladysassistant/integration-sdk` (v0.15) and to
+talking to Gladys through `@gladysassistant/integration-sdk` (v0.16) and to
 the EHEIM Digital hub through `ws` (the websocket library the SDK already
 uses). It connects to `ws://<hub>/ws` on the local network (no cloud, no
 authentication, an undocumented protocol ported from eheimdigital) and shows
@@ -21,7 +21,7 @@ device, not affiliated with EHEIM.
 
 ```bash
 npm install
-npm test                                  # node --test, the built-in runner
+npm test                                  # node --test --test-timeout=60000
 node --test test/app.test.js              # one file
 npm run lint                              # ESLint
 npm run format:check                      # Prettier, as the CI runs it
@@ -56,6 +56,12 @@ scripts/cover.mjs          cover.png generator
 
 ## Rules
 
+- **Features follow the core model.** Every feature has a non-empty `name`, a
+  numeric `min` and `max` (0/0 for text), boolean `read_only` and
+  `has_feedback`: Gladys refuses it otherwise, and the SDK's fake Gladys
+  (0.16.1) too; `test/helpers/coreFeature.js` checks every device kind.
+  Devices carry `should_poll: false` (Gladys 5.3 polls a device with
+  `poll_frequency` unless it says so).
 - **External ids are forever**: device `eheim:<mac>` (12 hex digits of the
   device MAC), features `water-temperature`, `target-temperature`,
   `heating`, `heater-power`, `heater-mode`, `heater-alert`, `filter-power`,
