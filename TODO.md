@@ -167,3 +167,7 @@ nReduce`) must stay at or above the floor; the offset is bounded (I2).
 github:GladysAssistant/integration-store .`) cannot be run by the
   development agent: it runs at publication (main session). No Docker on
   this PC: the image was not built locally.
+
+## Next patch
+
+- Migration review minors: see `_lots/migration-reviews/w13-gladys-eheim-digital-r1.md`.
